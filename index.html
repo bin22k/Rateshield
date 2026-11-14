@@ -23,7 +23,6 @@
                       linear-gradient(to bottom,rgba(16,185,129,.06) 1px,transparent 1px);
     background-size:24px 24px;
   }
-  /* ===== Flow diagram ===== */
   .flow-wrap{position:relative;min-height:170px;}
   .flow-row{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;position:relative;z-index:2;}
   .flow-node{display:flex;flex-direction:column;align-items:center;width:84px;flex-shrink:0;}
@@ -96,7 +95,6 @@
     <button onclick="resetSim()" class="mono text-xs px-3.5 py-2 rounded-lg border border-emerald-500/40 bg-[#0b1c17] hover:bg-emerald-500/15 text-emerald-300 transition cursor-pointer">↻ Mô phỏng lại</button>
   </div>
 
-  <!-- VISUAL SIMULATION -->
   <section class="rounded-xl border border-[#18332a] bg-[#07100d] overflow-hidden shadow-2xl">
     <div class="px-4 py-2.5 border-b border-[#142922] flex items-center justify-between bg-[#081310]">
       <div class="flex items-center gap-2">
@@ -108,12 +106,10 @@
       <span id="moduleCounter" class="mono text-[11px] text-emerald-500/80">MODULE / 01</span>
     </div>
 
-    <!-- Sơ đồ luồng (giống CyberLab: Attacker -> Gateway -> Backend) -->
     <div class="cyber-grid relative w-full px-5 pt-6 pb-4">
       <div class="flow-wrap" id="flowWrap">
         <div class="flow-row" id="flowRow"></div>
       </div>
-      <!-- Vùng hiển thị trạng thái thuật toán (bucket / queue / window) -->
       <div id="algoVisual" class="mt-4 rounded-lg border border-[#142922] bg-[#060e0b] p-3"></div>
     </div>
 
@@ -157,8 +153,14 @@
     </div>
   </section>
 </main>
-
 <script>
+window.onerror = function(msg, src, line, col){
+  var banner = document.createElement('div');
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#7f1d1d;color:#fecaca;padding:10px 14px;font-family:monospace;font-size:12px;white-space:pre-wrap;';
+  banner.textContent = '⚠ LỖI JS (dòng ' + line + '): ' + msg;
+  document.body.prepend(banner);
+};
+
 const MODULES = [
 {
   id:"01", name:"Token Bucket",
@@ -285,7 +287,6 @@ let leakyQueue = 0;
 let fixedCount = 0, fixedWindowStart = performance.now();
 let slidingTimestamps = [];
 
-// ===== Build tabs =====
 function buildTabs(){
   const wrap = document.getElementById('moduleTabs');
   wrap.innerHTML = MODULES.map((m,i)=>`
@@ -297,7 +298,6 @@ function buildTabs(){
     <button onclick="switchCodeTab('${l}')" data-code="${l}" class="code-tab px-2.5 py-1 rounded ${l==='nginx'?'bg-emerald-500/15 text-emerald-300 border border-emerald-500/50':'bg-[#060d0b] text-slate-400 border border-[#162b24]'}">${l==='nginx'?'Nginx':l==='express'?'Node/Express':'Redis Lua'}</button>`).join('');
 }
 
-// ===== Flow diagram render =====
 function buildFlow(){
   const row = document.getElementById('flowRow');
   row.innerHTML = `
@@ -360,7 +360,6 @@ function spawnPacket(allowed){
   if(allowed) setTimeout(()=>pulseNode('nodeBackend','active',400), 650);
 }
 
-// ===== Algo visual (bucket/queue/window) =====
 function renderAlgoVisual(){
   const box = document.getElementById('algoVisual');
   const m = MODULES[currentIdx];
@@ -399,7 +398,6 @@ function renderAlgoVisual(){
   }
 }
 
-// ===== Core evaluate =====
 function evaluateRequest(){
   const m = MODULES[currentIdx];
   if(currentIdx===0){
@@ -407,4 +405,103 @@ function evaluateRequest(){
     return {allowed:false, reason:`Cạn token (0/${m.cap}) → HTTP 429 Too Many Requests.`};
   }
   if(currentIdx===1){
-    if(leakyQueue<m.cap){ leakyQueue+=1; retu
+    if(leakyQueue<m.cap){ leakyQueue+=1; return {allowed:true, reason:`Vào hàng đợi (${leakyQueue}/${m.cap}), xả đều 2 req/s.`}; }
+    return {allowed:false, reason:`Tràn hàng đợi (${m.cap}/${m.cap}) → hủy gói tin, HTTP 429.`};
+  }
+  if(currentIdx===2){
+    if(performance.now()-fixedWindowStart>5000){ fixedWindowStart=performance.now(); fixedCount=0; }
+    if(fixedCount<m.cap){ fixedCount+=1; return {allowed:true, reason:`Trong ngưỡng khung 5s (${fixedCount}/${m.cap}).`}; }
+    return {allowed:false, reason:`Vượt ngưỡng khung 5s (${m.cap}/${m.cap}) → HTTP 429.`};
+  }
+  const now=performance.now();
+  slidingTimestamps = slidingTimestamps.filter(t=>now-t<5000);
+  if(slidingTimestamps.length<m.cap){ slidingTimestamps.push(now); return {allowed:true, reason:`Trong cửa sổ trượt 5s (${slidingTimestamps.length}/${m.cap}).`}; }
+  return {allowed:false, reason:`Cửa sổ trượt đầy (${m.cap}/${m.cap}) → chặn ngay, HTTP 429.`};
+}
+
+function updateStats(){
+  document.getElementById('statPassed').textContent = passedCount;
+  document.getElementById('statBlocked').textContent = blockedCount;
+  const m = MODULES[currentIdx];
+  let cap;
+  if(currentIdx===0) cap = `${Math.floor(tokens)}/${m.cap}`;
+  else if(currentIdx===1) cap = `${leakyQueue}/${m.cap}`;
+  else if(currentIdx===2) cap = `${fixedCount}/${m.cap}`;
+  else cap = `${slidingTimestamps.filter(t=>performance.now()-t<5000).length}/${m.cap}`;
+  document.getElementById('statCapacity').textContent = cap;
+  renderAlgoVisual();
+}
+
+function fireRequest(){
+  const r = evaluateRequest();
+  if(r.allowed) passedCount++; else blockedCount++;
+  spawnPacket(r.allowed);
+  document.getElementById('liveCaption').textContent = (r.allowed?'✅ ':'⛔ ') + r.reason;
+  updateStats();
+}
+function sendSingle(){ fireRequest(); }
+function triggerBurst(){
+  let n=0;
+  const t = setInterval(()=>{ fireRequest(); n++; if(n>=8) clearInterval(t); }, 90);
+}
+function toggleFlood(){
+  const btn = document.getElementById('floodBtn');
+  if(floodInterval){
+    clearInterval(floodInterval); floodInterval=null;
+    btn.textContent='🔥 Botnet Flood: TẮT';
+    btn.classList.remove('bg-rose-500/30');
+  } else {
+    floodInterval = setInterval(fireRequest, 140);
+    btn.textContent='🔥 Botnet Flood: BẬT';
+    btn.classList.add('bg-rose-500/30');
+  }
+}
+
+function selectModule(idx){
+  currentIdx = idx;
+  document.querySelectorAll('.mod-tab').forEach((btn,i)=>{
+    btn.className = `mod-tab mono text-xs px-3.5 py-2 rounded border transition whitespace-nowrap ${i===idx?'bg-emerald-500/10 border-emerald-500/70 text-emerald-300 font-semibold':'bg-[#091310] border-[#162b24] text-slate-400 hover:text-emerald-300'}`;
+  });
+  const m = MODULES[idx];
+  document.getElementById('moduleCounter').textContent = `MODULE / ${m.id}`;
+  document.getElementById('algoTitle').textContent = m.name;
+  document.getElementById('algoSubtitle').textContent = m.subtitle;
+  document.getElementById('principleText').textContent = m.principle;
+  document.getElementById('mitigationText').textContent = m.mitigation;
+  resetSim();
+  renderCode();
+}
+
+function switchCodeTab(lang){
+  currentCodeLang = lang;
+  document.querySelectorAll('.code-tab').forEach(btn=>{
+    btn.className = btn.dataset.code===lang
+      ? "code-tab px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/50"
+      : "code-tab px-2.5 py-1 rounded bg-[#060d0b] text-slate-400 border border-[#162b24]";
+  });
+  renderCode();
+}
+function renderCode(){ document.getElementById('configCode').textContent = MODULES[currentIdx].configs[currentCodeLang]; }
+async function copyConfig(){
+  await navigator.clipboard.writeText(document.getElementById('configCode').textContent);
+  const btn = document.getElementById('copyBtn');
+  btn.textContent='✅ Đã Copy'; setTimeout(()=>btn.textContent='📋 Copy',1500);
+}
+
+function resetSim(){
+  if(floodInterval){ clearInterval(floodInterval); floodInterval=null; document.getElementById('floodBtn').textContent='🔥 Botnet Flood: TẮT'; }
+  passedCount=0; blockedCount=0;
+  tokens=MODULES[0].cap; leakyQueue=0; fixedCount=0; fixedWindowStart=performance.now(); slidingTimestamps=[];
+  document.getElementById('liveCaption').textContent = `Khởi tạo ${MODULES[currentIdx].name}: cổng bảo vệ đang trực tuyến, hãy gửi request để kiểm tra ngưỡng chịu tải.`;
+  updateStats();
+}
+
+buildTabs();
+buildFlow();
+selectModule(0);
+setInterval(()=>{ if(currentIdx===0 && tokens<MODULES[0].cap){ tokens=Math.min(MODULES[0].cap, tokens+2); updateStats(); } }, 1000);
+setInterval(()=>{ if(currentIdx===1 && leakyQueue>0){ leakyQueue=Math.max(0, leakyQueue-1); updateStats(); } }, 500);
+setInterval(()=>{ if(currentIdx===2){ updateStats(); } }, 300);
+</script>
+</body>
+</html>
