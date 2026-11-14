@@ -1,507 +1,532 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>[ RATESHIELD ] — Mô phỏng Thuật toán Chống Spam &amp; DDoS API</title>
-<meta name="description" content="Bảng điều khiển mô phỏng trực quan 4 thuật toán Rate Limiting (Token Bucket, Leaky Bucket, Fixed Window, Sliding Window) kèm sơ đồ luồng và xuất cấu hình Nginx/Redis." />
-<script src="https://cdn.tailwindcss.com"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --bg-main:#060d0b; --bg-card:#0a1512; --bg-panel:#08110e; --border-dim:#162b24;
-    --accent-green:#10b981; --accent-mint:#34d399; --accent-red:#ef4444;
-  }
-  body{background-color:var(--bg-main);color:#d1fae5;font-family:'Inter',system-ui,sans-serif;}
-  .mono{font-family:'JetBrains Mono',monospace;}
-  .no-scrollbar::-webkit-scrollbar{display:none;}
-  .no-scrollbar{-ms-overflow-style:none;scrollbar-width:none;}
-  .cyber-grid{
-    background-color:#050b09;
-    background-image:linear-gradient(to right,rgba(16,185,129,.06) 1px,transparent 1px),
-                      linear-gradient(to bottom,rgba(16,185,129,.06) 1px,transparent 1px);
-    background-size:24px 24px;
-  }
-  .flow-wrap{position:relative;min-height:170px;}
-  .flow-row{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;position:relative;z-index:2;}
-  .flow-node{display:flex;flex-direction:column;align-items:center;width:84px;flex-shrink:0;}
-  .flow-icon{
-    width:56px;height:56px;border-radius:12px;display:flex;align-items:center;justify-content:center;
-    font-size:22px;border:1px solid var(--border-dim);background:#0b1713;transition:all .25s ease;
-  }
-  .flow-icon.danger{border-color:rgba(239,68,68,.5);background:#190a0c;color:#fca5a5;}
-  .flow-icon.active{border-color:var(--accent-green);box-shadow:0 0 18px rgba(16,185,129,.35);}
-  .flow-icon.blocked{border-color:var(--accent-red);box-shadow:0 0 18px rgba(239,68,68,.4);}
-  .flow-label{margin-top:6px;font-size:10px;text-align:center;color:#94a3b8;line-height:1.3;}
-  .flow-label b{color:#d1fae5;display:block;font-size:10.5px;}
-  .flow-line{
-    position:absolute;top:28px;height:2px;background:linear-gradient(to right,var(--border-dim),var(--border-dim));
-    z-index:1;
-  }
-  .flow-line.dashed{background:repeating-linear-gradient(90deg,var(--border-dim) 0 6px,transparent 6px 12px);}
-  .packet-dot{
-    position:absolute;top:22px;width:14px;height:14px;border-radius:50%;
-    background:var(--accent-mint);box-shadow:0 0 10px var(--accent-mint);
-    opacity:0;z-index:3;
-  }
-  .packet-dot.blocked{background:var(--accent-red);box-shadow:0 0 10px var(--accent-red);}
-  @keyframes travelOk{
-    0%{opacity:0;left:var(--x0);}
-    8%{opacity:1;}
-    85%{opacity:1;left:var(--x1);}
-    100%{opacity:0;left:var(--x1);}
-  }
-  @keyframes travelBlocked{
-    0%{opacity:0;left:var(--x0);}
-    8%{opacity:1;}
-    48%{opacity:1;left:var(--xmid);}
-    49%{opacity:1;transform:scale(1.6);}
-    60%{opacity:0;transform:scale(0.2);}
-    100%{opacity:0;}
-  }
-  .bucket-fill{transition:height .25s ease,background .25s ease;}
-  .queue-cell{transition:background .2s ease,border-color .2s ease;}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>[ INTEGRITYSHIELD ] — Mô phỏng Cơ chế Kiểm tra Root & Custom ROM</title>
+  <meta name="description" content="Bảng điều khiển mô phỏng trực quan cách ứng dụng định danh & ngân hàng phát hiện Bootloader, Custom ROM, Root và Runtime Hook trên Android." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      background-color: #060d0b;
+      color: #d1fae5;
+      font-family: 'Inter', system-ui, sans-serif;
+    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .cyber-grid {
+      background-color: #050b09;
+      background-image:
+        linear-gradient(to right, rgba(16, 185, 129, 0.06) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(16, 185, 129, 0.06) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+  </style>
 </head>
 <body class="min-h-screen flex flex-col selection:bg-emerald-500/30 selection:text-emerald-200">
 
-<header class="border-b border-[#162b24] bg-[#060d0b]/90 backdrop-blur sticky top-0 z-20">
-  <div class="max-w-4xl mx-auto px-4 pt-3.5 pb-3">
-    <div class="flex items-center justify-between mb-3">
-      <div class="mono font-bold text-lg tracking-wider text-emerald-400 flex items-center gap-1.5">
-        <span class="text-emerald-600">[</span> RATESHIELD <span class="text-emerald-600">]</span>
+  <!-- Top Header & Module Tabs -->
+  <header class="border-b border-[#162b24] bg-[#060d0b]/95 backdrop-blur sticky top-0 z-20">
+    <div class="max-w-4xl mx-auto px-4 pt-3.5 pb-3">
+      <div class="flex items-center justify-between mb-3">
+        <div class="mono font-bold text-base sm:text-lg tracking-wider text-emerald-400 flex items-center gap-1.5">
+          <span class="text-emerald-600">[</span> INTEGRITYSHIELD <span class="text-emerald-600">]</span>
+        </div>
+        <button onclick="downloadLogo()" class="mono text-[11px] px-2.5 py-1 rounded border border-[#1d3b31] bg-[#0b1915] hover:border-emerald-500/60 text-emerald-300 transition cursor-pointer">
+          ⬇ Logo 512px
+        </button>
       </div>
-      <span class="mono text-[10px] px-2.5 py-1 rounded border border-[#1a382e] bg-[#0a1713] text-emerald-400 flex items-center gap-1.5">
-        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> OFFLINE MODE
+
+      <!-- 4 Security Check Layers -->
+      <div class="flex gap-2 overflow-x-auto no-scrollbar pb-0.5" id="moduleTabs">
+        <button onclick="selectModule(0)" class="mod-tab mono text-xs px-3.5 py-2 rounded border transition whitespace-nowrap bg-emerald-500/10 border-emerald-500/70 text-emerald-300 font-semibold">
+          <span class="text-emerald-500 mr-1">01</span> Bootloader & ROM
+        </button>
+        <button onclick="selectModule(1)" class="mod-tab mono text-xs px-3.5 py-2 rounded border transition whitespace-nowrap bg-[#091310] border-[#162b24] text-slate-400 hover:text-emerald-300">
+          <span class="text-slate-500 mr-1">02</span> Root & Magisk/KSU
+        </button>
+        <button onclick="selectModule(2)" class="mod-tab mono text-xs px-3.5 py-2 rounded border transition whitespace-nowrap bg-[#091310] border-[#162b24] text-slate-400 hover:text-emerald-300">
+          <span class="text-slate-500 mr-1">03</span> Hardware Attestation
+        </button>
+        <button onclick="selectModule(3)" class="mod-tab mono text-xs px-3.5 py-2 rounded border transition whitespace-nowrap bg-[#091310] border-[#162b24] text-slate-400 hover:text-emerald-300">
+          <span class="text-slate-500 mr-1">04</span> Runtime & Hook
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-4xl w-full mx-auto px-4 py-5 space-y-5 flex-1">
+
+    <!-- Title & Security Mode Badge -->
+    <div class="flex flex-wrap items-start justify-between gap-2">
+      <div>
+        <div class="mono text-[10px] tracking-[0.16em] uppercase text-emerald-500/80 mb-1">
+          ANDROID DEVICE INTEGRITY ARCHITECTURE / V1.0
+        </div>
+        <h1 class="text-xl sm:text-2xl font-bold text-white tracking-tight">
+          Mô phỏng Cơ chế Chặn Root & Custom ROM
+        </h1>
+      </div>
+      <span class="mono text-[11px] px-2.5 py-1 rounded border border-[#1a382e] bg-[#0a1713] text-emerald-400 flex items-center gap-1.5">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+        RASP / DEFENSIVE LAB
       </span>
     </div>
-    <div class="flex gap-2 overflow-x-auto no-scrollbar pb-0.5" id="moduleTabs"></div>
-  </div>
-</header>
 
-<main class="max-w-4xl w-full mx-auto px-4 py-5 space-y-5 flex-1">
-
-  <div>
-    <div class="mono text-[10px] tracking-[0.16em] uppercase text-emerald-500/80 mb-1">INTERACTIVE API RATE LIMITING LAB / V2.0</div>
-    <h1 class="text-xl sm:text-2xl font-bold text-white tracking-tight">Bảng điều khiển Mô phỏng Chống Spam &amp; DDoS</h1>
-  </div>
-
-  <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
-    <div>
-      <h2 id="algoTitle" class="mono text-xl sm:text-2xl font-bold text-white">Token Bucket</h2>
-      <p id="algoSubtitle" class="text-xs sm:text-sm text-slate-400 mt-0.5"></p>
-    </div>
-    <button onclick="resetSim()" class="mono text-xs px-3.5 py-2 rounded-lg border border-emerald-500/40 bg-[#0b1c17] hover:bg-emerald-500/15 text-emerald-300 transition cursor-pointer">↻ Mô phỏng lại</button>
-  </div>
-
-  <section class="rounded-xl border border-[#18332a] bg-[#07100d] overflow-hidden shadow-2xl">
-    <div class="px-4 py-2.5 border-b border-[#142922] flex items-center justify-between bg-[#081310]">
-      <div class="flex items-center gap-2">
-        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-        <span class="w-2 h-2 rounded-full bg-emerald-500/50"></span>
-        <span class="w-2 h-2 rounded-full bg-emerald-500/20"></span>
-        <span class="mono text-[11px] tracking-widest text-slate-400 ml-1">VISUAL SIMULATION</span>
+    <!-- Active Layer Info + Re-run Button -->
+    <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
+      <div>
+        <h2 id="layerTitle" class="mono text-xl sm:text-2xl font-bold text-white">Bootloader & Custom ROM</h2>
+        <p id="layerSubtitle" class="text-xs sm:text-sm text-slate-400 mt-0.5">
+          Xác minh trạng thái khóa khởi động (Verified Boot) và chữ ký hệ điều hành
+        </p>
       </div>
-      <span id="moduleCounter" class="mono text-[11px] text-emerald-500/80">MODULE / 01</span>
+      <button onclick="runAudit()" class="mono text-xs px-3.5 py-2 rounded-lg border border-emerald-500/50 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 font-semibold transition flex items-center gap-1.5 cursor-pointer">
+        <span>↻</span> Quét thiết bị
+      </button>
     </div>
 
-    <div class="cyber-grid relative w-full px-5 pt-6 pb-4">
-      <div class="flow-wrap" id="flowWrap">
-        <div class="flow-row" id="flowRow"></div>
+    <!-- Device Environment Switcher -->
+    <section class="rounded-xl border border-[#18332a] bg-[#08120f] p-3.5">
+      <div class="mono text-[11px] text-slate-400 uppercase tracking-wider mb-2.5">
+        Chọn cấu hình môi trường thiết bị giả lập:
       </div>
-      <div id="algoVisual" class="mt-4 rounded-lg border border-[#142922] bg-[#060e0b] p-3"></div>
-    </div>
-
-    <div class="grid grid-cols-3 border-t border-[#142922] bg-[#08120f] divide-x divide-[#142922] mono text-xs">
-      <div class="px-3 py-2 flex items-center justify-between">
-        <span class="text-slate-400 text-[11px]">200 OK:</span><span id="statPassed" class="text-emerald-400 font-bold">0</span>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2" id="envButtons">
+        <button onclick="setEnv('stock')" data-env="stock" class="env-btn mono text-xs py-2 px-2.5 rounded-lg border text-left transition bg-emerald-500/15 border-emerald-500 text-emerald-300 font-semibold">
+          <div>🟢 ROM Gốc (Stock)</div>
+          <div class="text-[10px] text-emerald-400/70 font-normal mt-0.5">Locked • Official</div>
+        </button>
+        <button onclick="setEnv('custom_rom')" data-env="custom_rom" class="env-btn mono text-xs py-2 px-2.5 rounded-lg border text-left transition bg-[#060d0b] border-[#162b24] text-slate-400 hover:border-slate-700">
+          <div>🟠 Custom ROM</div>
+          <div class="text-[10px] text-slate-500 font-normal mt-0.5">Unlocked • test-keys</div>
+        </button>
+        <button onclick="setEnv('rooted')" data-env="rooted" class="env-btn mono text-xs py-2 px-2.5 rounded-lg border text-left transition bg-[#060d0b] border-[#162b24] text-slate-400 hover:border-slate-700">
+          <div>🔴 Đã Root</div>
+          <div class="text-[10px] text-slate-500 font-normal mt-0.5">Magisk / KernelSU</div>
+        </button>
+        <button onclick="setEnv('hooked')" data-env="hooked" class="env-btn mono text-xs py-2 px-2.5 rounded-lg border text-left transition bg-[#060d0b] border-[#162b24] text-slate-400 hover:border-slate-700">
+          <div>🟣 Runtime Hook</div>
+          <div class="text-[10px] text-slate-500 font-normal mt-0.5">Frida / LSPosed</div>
+        </button>
       </div>
-      <div class="px-3 py-2 flex items-center justify-between">
-        <span class="text-slate-400 text-[11px]">429 BLOCK:</span><span id="statBlocked" class="text-rose-400 font-bold">0</span>
+    </section>
+
+    <!-- VISUAL SIMULATION CANVAS BOX -->
+    <section class="rounded-xl border border-[#18332a] bg-[#07100d] overflow-hidden shadow-2xl">
+      <div class="px-4 py-2.5 border-b border-[#142922] flex items-center justify-between bg-[#081310]">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span class="w-2 h-2 rounded-full bg-emerald-500/50"></span>
+          <span class="w-2 h-2 rounded-full bg-emerald-500/20"></span>
+          <span class="mono text-[11px] tracking-widest text-slate-400 ml-1">VISUAL SIMULATION</span>
+        </div>
+        <span id="moduleCounter" class="mono text-[11px] text-emerald-500/80">MODULE / 01</span>
       </div>
-      <div class="px-3 py-2 flex items-center justify-between">
-        <span class="text-slate-400 text-[11px]">TRẠNG THÁI:</span><span id="statCapacity" class="text-cyan-300 font-bold">10/10</span>
+
+      <div class="cyber-grid relative w-full">
+        <canvas id="simCanvas" class="w-full h-[240px] sm:h-[275px] block"></canvas>
       </div>
-    </div>
 
-    <div class="p-3 border-t border-[#142922] bg-[#091511] flex flex-wrap items-center gap-2">
-      <button onclick="sendSingle()" class="mono text-xs px-3 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold transition cursor-pointer">+1 Request</button>
-      <button onclick="triggerBurst()" class="mono text-xs px-3 py-2 rounded-lg bg-[#0f241d] hover:bg-[#153329] text-emerald-300 border border-emerald-500/40 font-semibold transition cursor-pointer">⚡ Burst (8 req)</button>
-      <button id="floodBtn" onclick="toggleFlood()" class="mono text-xs px-3 py-2 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/40 font-semibold transition cursor-pointer ml-auto">🔥 Botnet Flood: TẮT</button>
-    </div>
+      <div id="telemetryGrid" class="grid grid-cols-1 sm:grid-cols-3 border-t border-[#142922] bg-[#08120f] divide-y sm:divide-y-0 sm:divide-x divide-[#142922] mono text-[11px]"></div>
 
-    <div class="px-4 py-3 border-t border-[#142922] bg-[#060e0b]">
-      <p id="liveCaption" class="mono text-xs text-emerald-300/90 leading-relaxed">Sẵn sàng: bấm "+1 Request", "Burst" hoặc bật "Botnet Flood" để xem gói tin chạy qua cổng RateShield.</p>
-    </div>
-  </section>
-
-  <section class="rounded-xl border border-[#18332a] border-l-4 border-l-emerald-400 bg-[#091411] p-4 sm:p-5 space-y-3">
-    <div class="mono text-xs font-bold tracking-wider text-emerald-400">// NGUYÊN LÝ HOẠT ĐỘNG</div>
-    <p id="principleText" class="mono text-xs sm:text-[13px] text-slate-300 leading-relaxed"></p>
-    <p id="mitigationText" class="mono text-xs sm:text-[13px] text-emerald-200/80 leading-relaxed pt-1 border-t border-[#142922]"></p>
-  </section>
-
-  <section class="rounded-xl border border-[#18332a] bg-[#091411] p-4 sm:p-5 space-y-3">
-    <div class="flex flex-wrap items-center justify-between gap-2">
-      <div class="mono text-xs font-bold tracking-wider text-emerald-400">// EXPORT CẤU HÌNH THỰC TẾ</div>
-      <div class="flex gap-1.5 mono text-[11px]" id="codeTabs"></div>
-    </div>
-    <div class="relative">
-      <pre id="configCode" class="mono text-xs p-3.5 rounded-lg bg-[#050a08] border border-[#142922] text-emerald-200 overflow-x-auto leading-relaxed"></pre>
-      <button id="copyBtn" onclick="copyConfig()" class="mono text-[11px] px-2.5 py-1 rounded bg-[#0e211b] hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 absolute top-2.5 right-2.5 transition cursor-pointer">📋 Copy</button>
-    </div>
-  </section>
-</main>
-<script>
-window.onerror = function(msg, src, line, col){
-  var banner = document.createElement('div');
-  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#7f1d1d;color:#fecaca;padding:10px 14px;font-family:monospace;font-size:12px;white-space:pre-wrap;';
-  banner.textContent = '⚠ LỖI JS (dòng ' + line + '): ' + msg;
-  document.body.prepend(banner);
-};
-
-const MODULES = [
-{
-  id:"01", name:"Token Bucket",
-  subtitle:"Xô chứa Token · cho phép bùng nổ lưu lượng ngắn hạn trong giới hạn dung lượng",
-  principle:"Hệ thống duy trì một xô chứa tối đa 10 token và tự động nạp thêm 2 token mỗi giây. Mỗi request đi qua phải lấy 1 token; khi xô cạn, request bị chặn với mã HTTP 429.",
-  mitigation:"Ứng dụng thực tế: chuẩn mặc định của AWS API Gateway & Stripe vì vừa chống spam liên tục, vừa cho phép burst hợp lệ.",
-  cap:10,
-  configs:{
-    nginx:`# Nginx Rate Limiting (Token Bucket với burst)
-limit_req_zone $binary_remote_addr zone=api_limit:10m rate=2r/s;
-server {
-  location /api/ {
-    limit_req zone=api_limit burst=10 nodelay;
-    limit_req_status 429;
-    proxy_pass http://backend_upstream;
-  }
-}`,
-    express:`// Express.js Token Bucket Middleware
-import rateLimit from 'express-rate-limit';
-export const apiLimiter = rateLimit({
-  windowMs: 5 * 1000,
-  max: 10,
-  standardHeaders: true,
-  message: { error: 'HTTP 429: Vượt giới hạn Token Bucket' }
-});`,
-    redis:`-- Redis Atomic Token Bucket
-local tokens = tonumber(redis.call('get', KEYS[1]) or ARGV[1])
-if tokens > 0 then
-  redis.call('decr', KEYS[1])
-  return 1
-end
-return 0`
-  }
-},
-{
-  id:"02", name:"Leaky Bucket",
-  subtitle:"Xô rò rỉ FIFO · làm phẳng lưu lượng, ép tốc độ xử lý về mức cố định",
-  principle:"Request đổ vào hàng đợi tối đa 8 slot, xả xuống Backend đều đặn 2 req/giây. Botnet dội vào làm tràn hàng đợi sẽ bị hủy ngay.",
-  mitigation:"Bảo vệ API ghi dữ liệu nặng (thanh toán, xuất file, gửi OTP), giữ CPU/Database phía sau ổn định.",
-  cap:8,
-  configs:{
-    nginx:`limit_req_zone $binary_remote_addr zone=strict_queue:10m rate=2r/s;
-server {
-  location /api/checkout {
-    limit_req zone=strict_queue burst=8;
-    limit_req_status 429;
-    proxy_pass http://backend_upstream;
-  }
-}`,
-    express:`const queue = [];
-setInterval(() => {
-  if (queue.length > 0) {
-    const nextReq = queue.shift();
-    nextReq.resolve();
-  }
-}, 500);`,
-    redis:`local len = redis.call('llen', KEYS[1])
-if len < tonumber(ARGV[1]) then
-  redis.call('rpush', KEYS[1], ARGV[2])
-  return 1
-end
-return 0`
-  }
-},
-{
-  id:"03", name:"Fixed Window",
-  subtitle:"Cửa sổ cố định · đếm request theo khung thời gian 5 giây",
-  principle:"Chia thời gian thành khung cố định 5s, mỗi khung tối đa 6 request. Điểm yếu: bắn 6 req ở cuối khung và 6 req ở đầu khung kế tiếp có thể lọt gấp đôi ngưỡng.",
-  mitigation:"Chỉ nên dùng cho endpoint ít nhạy cảm; endpoint quan trọng nên chuyển sang Sliding Window.",
-  cap:6,
-  configs:{
-    nginx:`map $time_iso8601 $minute_slot {
-  ~^(\\d+-\\d+-\\d+T\\d+:\\d+) $1;
-}
-# Khuyến nghị kết hợp Redis INCR + EXPIRE 5s`,
-    express:`const hits = new Map();
-function fixedWindow(ip) {
-  const slot = Math.floor(Date.now() / 5000);
-  const key = ip + ':' + slot;
-  const count = (hits.get(key) || 0) + 1;
-  hits.set(key, count);
-  return count <= 6;
-}`,
-    redis:`local current = redis.call('INCR', KEYS[1])
-if current == 1 then redis.call('EXPIRE', KEYS[1], 5) end
-return current <= 6 and 1 or 0`
-  }
-},
-{
-  id:"04", name:"Sliding Window",
-  subtitle:"Cửa sổ trượt chính xác · loại bỏ lỗ hổng điểm giao khung giờ",
-  principle:"Lưu timestamp chính xác của mỗi request trong 5 giây gần nhất. Khi tổng số request trong 5s vừa qua chạm ngưỡng 6, request mới bị chặn ngay.",
-  mitigation:"Tiêu chuẩn bảo mật cao nhất cho API đăng nhập, chống brute-force và chống spam mã giảm giá.",
-  cap:6,
-  configs:{
-    nginx:`# OpenResty + Redis Sorted Set (ZSET)
-access_by_lua_block {
-  -- ZREMRANGEBYSCORE rồi ZCARD trong khoảng trượt
-}`,
-    express:`const logs = new Map();
-function slidingWindow(ip) {
-  const now = Date.now();
-  const valid = (logs.get(ip) || []).filter(t => now - t < 5000);
-  if (valid.length >= 6) return false;
-  valid.push(now);
-  logs.set(ip, valid);
-  return true;
-}`,
-    redis:`redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, ARGV[1]-5000)
-if redis.call('ZCARD', KEYS[1]) < 6 then
-  redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2])
-  return 1
-end
-return 0`
-  }
-}
-];
-
-let currentIdx = 0, currentCodeLang = 'nginx';
-let passedCount = 0, blockedCount = 0, floodInterval = null;
-
-let tokens = 10;
-let leakyQueue = 0;
-let fixedCount = 0, fixedWindowStart = performance.now();
-let slidingTimestamps = [];
-
-function buildTabs(){
-  const wrap = document.getElementById('moduleTabs');
-  wrap.innerHTML = MODULES.map((m,i)=>`
-    <button onclick="selectModule(${i})" data-idx="${i}" class="mod-tab mono text-xs px-3.5 py-2 rounded border transition whitespace-nowrap ${i===0?'bg-emerald-500/10 border-emerald-500/70 text-emerald-300 font-semibold':'bg-[#091310] border-[#162b24] text-slate-400 hover:text-emerald-300'}">
-      <span class="${i===0?'text-emerald-500':'text-slate-500'} mr-1">${m.id}</span> ${m.name}
-    </button>`).join('');
-  const codeWrap = document.getElementById('codeTabs');
-  codeWrap.innerHTML = ['nginx','express','redis'].map(l=>`
-    <button onclick="switchCodeTab('${l}')" data-code="${l}" class="code-tab px-2.5 py-1 rounded ${l==='nginx'?'bg-emerald-500/15 text-emerald-300 border border-emerald-500/50':'bg-[#060d0b] text-slate-400 border border-[#162b24]'}">${l==='nginx'?'Nginx':l==='express'?'Node/Express':'Redis Lua'}</button>`).join('');
-}
-
-function buildFlow(){
-  const row = document.getElementById('flowRow');
-  row.innerHTML = `
-    <div class="flow-node">
-      <div class="flow-icon danger" id="nodeClient">💻</div>
-      <div class="flow-label"><b>Client/Attacker</b>Gửi request API</div>
-    </div>
-    <div class="flow-node">
-      <div class="flow-icon" id="nodeGateway">🛡️</div>
-      <div class="flow-label"><b>RateShield Gateway</b>Áp thuật toán giới hạn</div>
-    </div>
-    <div class="flow-node">
-      <div class="flow-icon" id="nodeBackend">🗄️</div>
-      <div class="flow-label"><b>Backend API</b>Chỉ nhận request hợp lệ</div>
-    </div>`;
-  drawFlowLines();
-}
-
-function drawFlowLines(){
-  const wrap = document.getElementById('flowWrap');
-  wrap.querySelectorAll('.flow-line').forEach(el=>el.remove());
-  const nodes = ['nodeClient','nodeGateway','nodeBackend'].map(id=>document.getElementById(id));
-  for(let i=0;i<nodes.length-1;i++){
-    const a = nodes[i].getBoundingClientRect(), b = nodes[i+1].getBoundingClientRect(), base = wrap.getBoundingClientRect();
-    const line = document.createElement('div');
-    line.className = 'flow-line';
-    line.style.left = (a.left - base.left + a.width) + 'px';
-    line.style.width = (b.left - a.left - a.width) + 'px';
-    wrap.appendChild(line);
-  }
-}
-window.addEventListener('resize', drawFlowLines);
-
-function pulseNode(id, cls, ms){
-  const el = document.getElementById(id);
-  el.classList.add(cls);
-  setTimeout(()=>el.classList.remove(cls), ms || 400);
-}
-
-function spawnPacket(allowed){
-  const wrap = document.getElementById('flowWrap');
-  const nodes = ['nodeClient','nodeGateway','nodeBackend'].map(id=>document.getElementById(id));
-  const base = wrap.getBoundingClientRect();
-  const r0 = nodes[0].getBoundingClientRect(), r1 = nodes[1].getBoundingClientRect(), r2 = nodes[2].getBoundingClientRect();
-  const x0 = r0.left - base.left + r0.width/2 - 7;
-  const xmid = r1.left - base.left + r1.width/2 - 7;
-  const x1 = r2.left - base.left + r2.width/2 - 7;
-
-  const dot = document.createElement('div');
-  dot.className = 'packet-dot' + (allowed ? '' : ' blocked');
-  dot.style.setProperty('--x0', x0+'px');
-  dot.style.setProperty('--xmid', xmid+'px');
-  dot.style.setProperty('--x1', x1+'px');
-  dot.style.animation = (allowed ? 'travelOk 0.9s ease-out forwards' : 'travelBlocked 0.6s ease-out forwards');
-  wrap.appendChild(dot);
-  setTimeout(()=>dot.remove(), 1000);
-
-  pulseNode('nodeClient','active',300);
-  setTimeout(()=>pulseNode('nodeGateway', allowed?'active':'blocked', 400), 250);
-  if(allowed) setTimeout(()=>pulseNode('nodeBackend','active',400), 650);
-}
-
-function renderAlgoVisual(){
-  const box = document.getElementById('algoVisual');
-  const m = MODULES[currentIdx];
-  if(currentIdx===0){
-    const pct = Math.max(0, Math.min(100, (tokens/m.cap)*100));
-    box.innerHTML = `
-      <div class="mono text-[10px] text-slate-400 mb-1.5">TOKEN BUCKET — nạp lại 2 token/giây</div>
-      <div class="w-full h-5 rounded bg-[#0a1713] border border-[#142922] overflow-hidden">
-        <div class="bucket-fill h-full" style="width:${pct}%;background:${pct>30?'#10b981':'#ef4444'}"></div>
+      <div class="px-4 py-3 border-t border-[#142922] bg-[#060e0b]">
+        <p id="liveCaption" class="mono text-xs text-emerald-300/90 leading-relaxed"></p>
       </div>
-      <div class="mono text-[10px] text-slate-400 mt-1">Còn lại: ${Math.floor(tokens)} / ${m.cap} token</div>`;
-  } else if(currentIdx===1){
-    let cells='';
-    for(let i=0;i<m.cap;i++){
-      cells += `<div class="queue-cell w-5 h-5 rounded border ${i<leakyQueue?'bg-emerald-500/70 border-emerald-400':'bg-[#0a1713] border-[#142922]'}"></div>`;
+    </section>
+
+    <!-- // NGUYÊN LÝ HOẠT ĐỘNG -->
+    <section class="rounded-xl border border-[#18332a] border-l-4 border-l-emerald-400 bg-[#091411] p-4 sm:p-5 space-y-3">
+      <div class="mono text-xs font-bold tracking-wider text-emerald-400">
+        // NGUYÊN LÝ HOẠT ĐỘNG
+      </div>
+      <p id="principleText" class="mono text-xs sm:text-[13px] text-slate-300 leading-relaxed"></p>
+      <p id="defenseText" class="mono text-xs sm:text-[13px] text-emerald-200/80 leading-relaxed pt-2 border-t border-[#142922]"></p>
+    </section>
+
+    <!-- // DEFENSIVE CODE REFERENCE -->
+    <section class="rounded-xl border border-[#18332a] bg-[#091411] p-4 sm:p-5 space-y-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="mono text-xs font-bold tracking-wider text-emerald-400">
+          // MÃ NGUỒN KIỂM TRA BẢO MẬT (KOTLIN / NATIVE C++)
+        </div>
+        <button id="copyBtn" onclick="copyCode()" class="mono text-[11px] px-2.5 py-1 rounded bg-[#0e211b] hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 transition cursor-pointer">
+          📋 Copy Snippet
+        </button>
+      </div>
+      <pre id="codeBlock" class="mono text-xs p-3.5 rounded-lg bg-[#050a08] border border-[#142922] text-emerald-200 overflow-x-auto leading-relaxed"></pre>
+    </section>
+  </main>
+  <script>
+    const LAYERS = [
+      {
+        id: "01",
+        title: "Bootloader & Custom ROM",
+        subtitle: "Xác minh trạng thái khóa khởi động (Verified Boot) và chữ ký hệ điều hành",
+        probeNode: "System Props",
+        probeSub: "getprop / AVB",
+        principle: "Ngay khi khởi động, ứng dụng đọc các thuộc tính hệ thống (System Properties) và chuỗi Android Verified Boot (AVB). Máy chạy ROM gốc có Bootloader khóa chặt (verifiedbootstate=green) và được ký bằng khóa riêng của hãng sản xuất (release-keys). Máy cài Custom ROM thường phải mở khóa Bootloader (orange) và dùng khóa công khai mặc định (test-keys).",
+        defense: "Lý do chặn: Khi Bootloader đã mở khóa, phân vùng /system và /boot không còn được bảo vệ toàn vẹn bằng chữ ký phần cứng, cho phép cài đặt mã độc tầng thấp nên ứng dụng định danh lập tức từ chối chạy.",
+        code: `// Kotlin: Kiểm tra chữ ký bản dựng ROM & trạng thái Verified Boot\nfun isCustomOrTestRom(): Boolean {\n    val buildTags = android.os.Build.TAGS ?: ""\n    val isTestKeys = buildTags.contains("test-keys") || buildTags.contains("dev-keys")\n    val bootState = getSystemProperty("ro.boot.verifiedbootstate") // "green" = Locked\n    val isUnlocked = bootState != "green" && bootState.isNotEmpty()\n    return isTestKeys || isUnlocked\n}`,
+        evalEnv(env) {
+          if (env === 'stock') {
+            return {
+              blocked: false,
+              props: [
+                { k: "verifiedbootstate", v: "green (Locked)", ok: true },
+                { k: "ro.build.tags", v: "release-keys", ok: true },
+                { k: "ro.debuggable", v: "0", ok: true }
+              ],
+              caption: "02 / [HỢP LỆ] Bootloader đang khóa (green) và bản dựng mang chữ ký hãng (release-keys) -> Cho phép vào màn hình đăng nhập."
+            };
+          }
+          return {
+            blocked: true,
+            props: [
+              { k: "verifiedbootstate", v: "orange (Unlocked)", ok: false },
+              { k: "ro.build.tags", v: env === 'custom_rom' ? "test-keys" : "release-keys", ok: env !== 'custom_rom' },
+              { k: "ro.secure", v: "0 (Modified)", ok: false }
+            ],
+            caption: "02 / [BỊ CHẶN] Phát hiện Bootloader đã mở khóa (orange) hoặc bản dựng Custom ROM (test-keys) -> Hiển thị cảnh báo thiết bị không an toàn."
+          };
+        }
+      },
+      {
+        id: "02",
+        title: "Root & Magisk / KernelSU",
+        subtitle: "Quét tệp nhị phân đặc quyền su và điểm gắn kết phân vùng ảo (Mount Points)",
+        probeNode: "VFS & Mounts",
+        probeSub: "/proc/self/mounts",
+        principle: "Thay vì chỉ kiểm tra file /system/bin/su bằng Java (vốn dễ bị ẩn bởi các module), ứng dụng dùng thư viện Native C/C++ gọi trực tiếp syscall xuống nhân Linux để kiểm tra thư mục /data/adb, các phân vùng OverlayFS và điểm gắn kết bất thường của Magisk hoặc KernelSU trong tệp /proc/self/mounts.",
+        defense: "Lý do chặn: Gọi Native Syscall trực tiếp giúp ứng dụng bỏ qua các lớp đánh lừa ở tầng Java Framework, phát hiện chính xác các phân vùng hệ thống đã bị chỉnh sửa.",
+        code: `// Native C / JNI: Kiểm tra trực tiếp điểm gắn kết & đường dẫn đặc quyền\n#include <unistd.h>\nbool checkRootPaths() {\n    const char* paths[] = {\n        "/system/bin/su", "/system/xbin/su", "/sbin/su", "/data/adb/magisk", "/data/adb/ksu"\n    };\n    for (int i = 0; i < 5; i++) {\n        if (access(paths[i], F_OK) == 0) return true; // Phát hiện tồn tại\n    }\n    return false;\n}`,
+        evalEnv(env) {
+          if (env === 'stock' || env === 'custom_rom') {
+            return {
+              blocked: false,
+              props: [
+                { k: "su binary", v: "Not Found", ok: true },
+                { k: "/data/adb/*", v: "Clean", ok: true },
+                { k: "proc/mounts", v: "Standard VFS", ok: true }
+              ],
+              caption: "02 / [HỢP LỆ] Không phát hiện tệp nhị phân su hay phân vùng gắn kết đặc quyền (Magisk/KernelSU) -> Vượt qua lớp kiểm tra Root."
+            };
+          }
+          return {
+            blocked: true,
+            props: [
+              { k: "su / daemon", v: "Detected (adb)", ok: false },
+              { k: "OverlayFS", v: "Suspicious Mount", ok: false },
+              { k: "SELinux", v: "Permissive / Patched", ok: false }
+            ],
+            caption: "02 / [BỊ CHẶN] Phát hiện dấu vết đặc quyền Root / OverlayFS mount point tại tầng nhân Linux -> Ngắt kết nối phiên làm việc."
+          };
+        }
+      },
+      {
+        id: "03",
+        title: "Hardware Key Attestation",
+        subtitle: "Xác thực phần cứng qua TEE / StrongBox và Google Play Integrity API",
+        probeNode: "TEE / Keystore",
+        probeSub: "Play Integrity",
+        principle: "Ứng dụng yêu cầu chip bảo mật phần cứng (Trusted Execution Environment) tạo một cặp khóa mật mã và ký chứng chỉ xác nhận trạng thái khởi động thực tế của thiết bị, sau đó gửi chuỗi token mã hóa này về máy chủ (Backend) để đối chiếu với khóa gốc của Google.",
+        defense: "Lý do chặn: Quá trình xác minh chữ ký diễn ra trên máy chủ (Server-side) dựa trên khóa phần cứng không thể trích xuất từ ROM gốc, nên mọi nỗ lực giả mạo thông số ở phía điện thoại đều bị từ chối.",
+        code: `// Kotlin: Yêu cầu Token xác thực toàn vẹn phần cứng (Play Integrity)\nval integrityManager = IntegrityManagerFactory.create(context)\nval request = IntegrityTokenRequest.builder()\n    .setNonce(serverGeneratedNonce) // Chuỗi ngẫu nhiên từ Backend\n    .build()\nintegrityManager.requestIntegrityToken(request).addOnSuccessListener { res ->\n    sendTokenToBackendForVerification(res.token())\n}`,
+        evalEnv(env) {
+          if (env === 'stock') {
+            return {
+              blocked: false,
+              props: [
+                { k: "DEVICE_INTEGRITY", v: "MEETS (Pass)", ok: true },
+                { k: "STRONG_INTEGRITY", v: "MEETS (Hardware)", ok: true },
+                { k: "Keystore Chain", v: "Verified Google Root", ok: true }
+              ],
+              caption: "02 / [HỢP LỆ] Chip bảo mật TEE xác nhận thiết bị nguyên bản (MEETS_STRONG_INTEGRITY) -> Máy chủ cấp phiên giao dịch."
+            };
+          }
+          return {
+            blocked: true,
+            props: [
+              { k: "DEVICE_INTEGRITY", v: "FAILED", ok: false },
+              { k: "STRONG_INTEGRITY", v: "FAILED (Unlocked)", ok: false },
+              { k: "Keystore Chain", v: "Broken / Unverified", ok: false }
+            ],
+            caption: "02 / [BỊ CHẶN] Chuỗi chứng chỉ phần cứng TEE báo trạng thái Bootloader đã mở khóa -> Server từ chối cấp token truy cập."
+          };
+        }
+      },
+      {
+        id: "04",
+        title: "Runtime & Hook Detection",
+        subtitle: "Phát hiện công cụ tiêm mã động Frida, Xposed / LSPosed trong bộ nhớ",
+        probeNode: "Memory Maps",
+        probeSub: "/proc/self/maps",
+        principle: "Khi ứng dụng đang chạy, lớp bảo vệ RASP (Runtime Application Self-Protection) liên tục quét danh sách các thư viện đang nạp trong không gian bộ nhớ tiến trình (/proc/self/maps) và kiểm tra TracerPid để phát hiện thư viện lạ (như frida-agent, lsposed) đang can thiệp vào luồng thực thi.",
+        defense: "Lý do chặn: Ngăn chặn việc đọc trộm dữ liệu nhạy cảm trên RAM hoặc sửa đổi kết quả trả về của các hàm kiểm tra bảo mật ngay lúc ứng dụng đang hoạt động.",
+        code: `// Native C: Quét /proc/self/maps phát hiện thư viện tiêm vào RAM\nFILE *fp = fopen("/proc/self/maps", "r");\nchar line[512];\nwhile (fgets(line, sizeof(line), fp)) {\n    if (strstr(line, "frida") || strstr(line, "xposed") || strstr(line, "lsposed")) {\n        fclose(fp);\n        _exit(1); // Phát hiện can thiệp bộ nhớ -> Thoát an toàn\n    }\n}`,
+        evalEnv(env) {
+          if (env !== 'hooked') {
+            return {
+              blocked: false,
+              props: [
+                { k: "/proc/self/maps", v: "Clean Libraries", ok: true },
+                { k: "TracerPid", v: "0 (No Debugger)", ok: true },
+                { k: "Port 27042", v: "Closed", ok: true }
+              ],
+              caption: "02 / [HỢP LỆ] Không gian bộ nhớ RAM sạch, không phát hiện công cụ debug hay framework tiêm mã -> Ứng dụng vận hành ổn định."
+            };
+          }
+          return {
+            blocked: true,
+            props: [
+              { k: "/proc/self/maps", v: "frida / lsposed found", ok: false },
+              { k: "TracerPid", v: "Attached (!= 0)", ok: false },
+              { k: "RASP Action", v: "Terminate Process", ok: false }
+            ],
+            caption: "02 / [BỊ CHẶN] Module RASP phát hiện thư viện tiêm mã (Frida/LSPosed) trong không gian bộ nhớ -> Tự động đóng ứng dụng."
+          };
+        }
+      }
+    ];
+
+    let currentLayer = 0;
+    let currentEnv = 'stock';
+    let scanProgress = 0;
+    let isScanning = true;
+
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
-    box.innerHTML = `
-      <div class="mono text-[10px] text-slate-400 mb-1.5">LEAKY BUCKET — xả đều 2 req/giây</div>
-      <div class="flex gap-1 flex-wrap">${cells}</div>
-      <div class="mono text-[10px] text-slate-400 mt-1">Hàng đợi: ${leakyQueue} / ${m.cap}</div>`;
-  } else if(currentIdx===2){
-    const remain = Math.max(0, 5 - (performance.now()-fixedWindowStart)/1000);
-    box.innerHTML = `
-      <div class="mono text-[10px] text-slate-400 mb-1.5">FIXED WINDOW — khung 5 giây, tối đa ${m.cap} req</div>
-      <div class="w-full h-2 rounded bg-[#0a1713] overflow-hidden mb-1.5">
-        <div class="h-full bg-cyan-400/70" style="width:${(remain/5)*100}%"></div>
-      </div>
-      <div class="mono text-[10px] text-slate-400">Đã dùng: ${fixedCount} / ${m.cap} — khung còn ${remain.toFixed(1)}s</div>`;
-  } else {
-    const now = performance.now();
-    slidingTimestamps = slidingTimestamps.filter(t=>now-t<5000);
-    box.innerHTML = `
-      <div class="mono text-[10px] text-slate-400 mb-1.5">SLIDING WINDOW — 5 giây gần nhất, tối đa ${m.cap} req</div>
-      <div class="flex gap-1 flex-wrap">${slidingTimestamps.map(()=> '<div class="w-5 h-5 rounded border bg-emerald-500/70 border-emerald-400"></div>').join('') || '<span class="mono text-[10px] text-slate-500">chưa có request nào</span>'}</div>
-      <div class="mono text-[10px] text-slate-400 mt-1">Trong cửa sổ: ${slidingTimestamps.length} / ${m.cap}</div>`;
-  }
-}
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
 
-function evaluateRequest(){
-  const m = MODULES[currentIdx];
-  if(currentIdx===0){
-    if(tokens>=1){ tokens-=1; return {allowed:true, reason:`Token hợp lệ: tiêu thụ 1 token (còn ${Math.floor(tokens)}/${m.cap}) → chuyển tiếp Backend.`}; }
-    return {allowed:false, reason:`Cạn token (0/${m.cap}) → HTTP 429 Too Many Requests.`};
-  }
-  if(currentIdx===1){
-    if(leakyQueue<m.cap){ leakyQueue+=1; return {allowed:true, reason:`Vào hàng đợi (${leakyQueue}/${m.cap}), xả đều 2 req/s.`}; }
-    return {allowed:false, reason:`Tràn hàng đợi (${m.cap}/${m.cap}) → hủy gói tin, HTTP 429.`};
-  }
-  if(currentIdx===2){
-    if(performance.now()-fixedWindowStart>5000){ fixedWindowStart=performance.now(); fixedCount=0; }
-    if(fixedCount<m.cap){ fixedCount+=1; return {allowed:true, reason:`Trong ngưỡng khung 5s (${fixedCount}/${m.cap}).`}; }
-    return {allowed:false, reason:`Vượt ngưỡng khung 5s (${m.cap}/${m.cap}) → HTTP 429.`};
-  }
-  const now=performance.now();
-  slidingTimestamps = slidingTimestamps.filter(t=>now-t<5000);
-  if(slidingTimestamps.length<m.cap){ slidingTimestamps.push(now); return {allowed:true, reason:`Trong cửa sổ trượt 5s (${slidingTimestamps.length}/${m.cap}).`}; }
-  return {allowed:false, reason:`Cửa sổ trượt đầy (${m.cap}/${m.cap}) → chặn ngay, HTTP 429.`};
-}
+    function selectModule(idx) {
+      currentLayer = idx;
+      document.querySelectorAll('.mod-tab').forEach((btn, i) => {
+        if (i === idx) {
+          btn.className = "mod-tab mono text-xs px-3.5 py-2 rounded border transition whitespace-nowrap bg-emerald-500/10 border-emerald-500/70 text-emerald-300 font-semibold";
+        } else {
+          btn.className = "mod-tab mono text-xs px-3.5 py-2 rounded border transition whitespace-nowrap bg-[#091310] border-[#162b24] text-slate-400 hover:text-emerald-300";
+        }
+      });
 
-function updateStats(){
-  document.getElementById('statPassed').textContent = passedCount;
-  document.getElementById('statBlocked').textContent = blockedCount;
-  const m = MODULES[currentIdx];
-  let cap;
-  if(currentIdx===0) cap = `${Math.floor(tokens)}/${m.cap}`;
-  else if(currentIdx===1) cap = `${leakyQueue}/${m.cap}`;
-  else if(currentIdx===2) cap = `${fixedCount}/${m.cap}`;
-  else cap = `${slidingTimestamps.filter(t=>performance.now()-t<5000).length}/${m.cap}`;
-  document.getElementById('statCapacity').textContent = cap;
-  renderAlgoVisual();
-}
+      const layer = LAYERS[idx];
+      document.getElementById('moduleCounter').textContent = `MODULE / ${layer.id}`;
+      document.getElementById('layerTitle').textContent = layer.title;
+      document.getElementById('layerSubtitle').textContent = layer.subtitle;
+      document.getElementById('principleText').textContent = layer.principle;
+      document.getElementById('defenseText').textContent = layer.defense;
+      document.getElementById('codeBlock').textContent = layer.code;
 
-function fireRequest(){
-  const r = evaluateRequest();
-  if(r.allowed) passedCount++; else blockedCount++;
-  spawnPacket(r.allowed);
-  document.getElementById('liveCaption').textContent = (r.allowed?'✅ ':'⛔ ') + r.reason;
-  updateStats();
-}
-function sendSingle(){ fireRequest(); }
-function triggerBurst(){
-  let n=0;
-  const t = setInterval(()=>{ fireRequest(); n++; if(n>=8) clearInterval(t); }, 90);
-}
-function toggleFlood(){
-  const btn = document.getElementById('floodBtn');
-  if(floodInterval){
-    clearInterval(floodInterval); floodInterval=null;
-    btn.textContent='🔥 Botnet Flood: TẮT';
-    btn.classList.remove('bg-rose-500/30');
-  } else {
-    floodInterval = setInterval(fireRequest, 140);
-    btn.textContent='🔥 Botnet Flood: BẬT';
-    btn.classList.add('bg-rose-500/30');
-  }
-}
+      runAudit();
+    }
 
-function selectModule(idx){
-  currentIdx = idx;
-  document.querySelectorAll('.mod-tab').forEach((btn,i)=>{
-    btn.className = `mod-tab mono text-xs px-3.5 py-2 rounded border transition whitespace-nowrap ${i===idx?'bg-emerald-500/10 border-emerald-500/70 text-emerald-300 font-semibold':'bg-[#091310] border-[#162b24] text-slate-400 hover:text-emerald-300'}`;
-  });
-  const m = MODULES[idx];
-  document.getElementById('moduleCounter').textContent = `MODULE / ${m.id}`;
-  document.getElementById('algoTitle').textContent = m.name;
-  document.getElementById('algoSubtitle').textContent = m.subtitle;
-  document.getElementById('principleText').textContent = m.principle;
-  document.getElementById('mitigationText').textContent = m.mitigation;
-  resetSim();
-  renderCode();
-}
+    function setEnv(env) {
+      currentEnv = env;
+      document.querySelectorAll('.env-btn').forEach(btn => {
+        if (btn.dataset.env === env) {
+          btn.className = "env-btn mono text-xs py-2 px-2.5 rounded-lg border text-left transition bg-emerald-500/15 border-emerald-500 text-emerald-300 font-semibold";
+        } else {
+          btn.className = "env-btn mono text-xs py-2 px-2.5 rounded-lg border text-left transition bg-[#060d0b] border-[#162b24] text-slate-400 hover:border-slate-700";
+        }
+      });
+      runAudit();
+    }
 
-function switchCodeTab(lang){
-  currentCodeLang = lang;
-  document.querySelectorAll('.code-tab').forEach(btn=>{
-    btn.className = btn.dataset.code===lang
-      ? "code-tab px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/50"
-      : "code-tab px-2.5 py-1 rounded bg-[#060d0b] text-slate-400 border border-[#162b24]";
-  });
-  renderCode();
-}
-function renderCode(){ document.getElementById('configCode').textContent = MODULES[currentIdx].configs[currentCodeLang]; }
-async function copyConfig(){
-  await navigator.clipboard.writeText(document.getElementById('configCode').textContent);
-  const btn = document.getElementById('copyBtn');
-  btn.textContent='✅ Đã Copy'; setTimeout(()=>btn.textContent='📋 Copy',1500);
-}
+    function runAudit() {
+      scanProgress = 0;
+      isScanning = true;
+      const result = LAYERS[currentLayer].evalEnv(currentEnv);
 
-function resetSim(){
-  if(floodInterval){ clearInterval(floodInterval); floodInterval=null; document.getElementById('floodBtn').textContent='🔥 Botnet Flood: TẮT'; }
-  passedCount=0; blockedCount=0;
-  tokens=MODULES[0].cap; leakyQueue=0; fixedCount=0; fixedWindowStart=performance.now(); slidingTimestamps=[];
-  document.getElementById('liveCaption').textContent = `Khởi tạo ${MODULES[currentIdx].name}: cổng bảo vệ đang trực tuyến, hãy gửi request để kiểm tra ngưỡng chịu tải.`;
-  updateStats();
-}
+      document.getElementById('liveCaption').textContent =
+        `01 / Đang gửi gói kiểm tra tới [${LAYERS[currentLayer].probeNode}] trên môi trường giả lập...`;
 
-buildTabs();
-buildFlow();
-selectModule(0);
-setInterval(()=>{ if(currentIdx===0 && tokens<MODULES[0].cap){ tokens=Math.min(MODULES[0].cap, tokens+2); updateStats(); } }, 1000);
-setInterval(()=>{ if(currentIdx===1 && leakyQueue>0){ leakyQueue=Math.max(0, leakyQueue-1); updateStats(); } }, 500);
-setInterval(()=>{ if(currentIdx===2){ updateStats(); } }, 300);
-</script>
+      const grid = document.getElementById('telemetryGrid');
+      grid.innerHTML = result.props.map(p => `
+        <div class="px-3.5 py-2.5 flex items-center justify-between gap-2">
+          <span class="text-slate-400 truncate">${p.k}:</span>
+          <span class="${p.ok ? 'text-emerald-400' : 'text-rose-400'} font-semibold truncate">${p.v}</span>
+        </div>
+      `).join('');
+    }
+
+    async function copyCode() {
+      const text = document.getElementById('codeBlock').textContent;
+      await navigator.clipboard.writeText(text);
+      const btn = document.getElementById('copyBtn');
+      btn.textContent = "✅ Đã Copy";
+      setTimeout(() => btn.textContent = "📋 Copy Snippet", 1500);
+    }
+
+    function drawBox(x, y, w, h, title, sub, stroke, fill, badge) {
+      ctx.save();
+      ctx.fillStyle = fill;
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.roundRect(x - w / 2, y - h / 2, w, h, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = stroke;
+      ctx.font = '700 12px "JetBrains Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(badge, x, y);
+
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = '600 11px "JetBrains Mono", monospace';
+      ctx.fillText(title, x, y + h / 2 + 15);
+
+      if (sub) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = '500 9.5px "JetBrains Mono", monospace';
+        ctx.fillText(sub, x, y + h / 2 + 28);
+      }
+      ctx.restore();
+    }
+
+    function animate() {
+      const w = canvas.getBoundingClientRect().width;
+      const h = canvas.getBoundingClientRect().height;
+      ctx.clearRect(0, 0, w, h);
+
+      const layer = LAYERS[currentLayer];
+      const result = layer.evalEnv(currentEnv);
+
+      const midY = h * 0.43;
+      const leftX = w * 0.17;
+      const centerX = w * 0.50;
+      const rightX = w * 0.83;
+      const blockY = h * 0.82;
+
+      ctx.strokeStyle = 'rgba(16, 185, 129, 0.25)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(leftX + 28, midY);
+      ctx.lineTo(centerX - 32, midY);
+      ctx.moveTo(centerX + 32, midY);
+      ctx.lineTo(rightX - 28, midY);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.28)';
+      ctx.beginPath();
+      ctx.moveTo(centerX, midY + 30);
+      ctx.lineTo(centerX, blockY - 15);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (isScanning) {
+        scanProgress += 0.014;
+        if (scanProgress >= 1) {
+          scanProgress = 1;
+          isScanning = false;
+          document.getElementById('liveCaption').textContent = result.caption;
+        }
+      }
+
+      let px, py;
+      const evaluated = scanProgress >= 0.5;
+      if (!evaluated) {
+        const t = scanProgress / 0.5;
+        px = leftX + (centerX - leftX) * t;
+        py = midY;
+      } else {
+        const t = (scanProgress - 0.5) / 0.5;
+        if (!result.blocked) {
+          px = centerX + (rightX - centerX) * t;
+          py = midY;
+        } else {
+          px = centerX;
+          py = midY + (blockY - midY) * t;
+        }
+      }
+
+      drawBox(leftX, midY, 52, 52, "App Client", "Init Check", "#34d399", "#0a1c17", "APP");
+
+      const probeColor = (evaluated && result.blocked) ? "#ef4444" : "#10b981";
+      const probeFill = (evaluated && result.blocked) ? "#230c10" : "#0b221b";
+      drawBox(centerX, midY, 60, 60, layer.probeNode, layer.probeSub, probeColor, probeFill, "SCAN");
+
+      const destColor = (evaluated && !result.blocked) ? "#34d399" : "#475569";
+      const destFill = (evaluated && !result.blocked) ? "#0b241c" : "#091210";
+      drawBox(rightX, midY, 52, 52, "eID Server", "Access OK", destColor, destFill, "AUTH");
+
+      const blockActive = evaluated && result.blocked;
+      ctx.fillStyle = blockActive ? '#2a0d12' : '#14090b';
+      ctx.strokeStyle = blockActive ? '#ef4444' : 'rgba(239, 68, 68, 0.35)';
+      ctx.lineWidth = blockActive ? 1.8 : 1;
+      ctx.beginPath();
+      ctx.roundRect(centerX - 48, blockY - 14, 96, 28, 6);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = blockActive ? '#fca5a5' : '#7f1d1d';
+      ctx.font = '700 10px "JetBrains Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText("ACCESS BLOCKED", centerX, blockY);
+
+      const isCompromised = currentEnv !== 'stock';
+      ctx.save();
+      ctx.fillStyle = (evaluated && result.blocked) ? 'rgba(239, 68, 68, 0.25)' : 'rgba(16, 185, 129, 0.22)';
+      ctx.strokeStyle = (evaluated && result.blocked) ? '#ef4444' : '#10b981';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.roundRect(px - 11, py - 11, 22, 22, 5);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = isCompromised ? '#ef4444' : '#34d399';
+      ctx.beginPath();
+      ctx.arc(px, py, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      requestAnimationFrame(animate);
+    }
+
+    function downloadLogo() {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 512;
+      const g = c.getContext('2d');
+
+      g.fillStyle = '#060d0b';
+      g.fillRect(0, 0, 512, 512);
+
+      g.strokeStyle = '#10b981';
+      g.lineWidth = 18;
+      g.beginPath();
+      g.roundRect(56, 56, 400, 400, 72);
+      g.stroke();
+
+      g.fillStyle = '#0b1e18';
+      g.fill();
+
+      g.fillStyle = '#34d399';
+      g.font = '700 115px monospace';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('[IS]', 256, 262);
+
+      const a = document.createElement('a');
+      a.download = 'integrityshield-logo.png';
+      a.href = c.toDataURL('image/png');
+      a.click();
+    }
+
+    selectModule(0);
+    animate();
+  </script>
 </body>
 </html>
