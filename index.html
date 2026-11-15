@@ -168,7 +168,7 @@
         probeNode: "System Props",
         probeSub: "getprop / AVB",
         principle: "Ngay khi khởi động, ứng dụng đọc các thuộc tính hệ thống (System Properties) và chuỗi Android Verified Boot (AVB). Máy chạy ROM gốc có Bootloader khóa chặt (verifiedbootstate=green) và được ký bằng khóa riêng của hãng sản xuất (release-keys). Máy cài Custom ROM thường phải mở khóa Bootloader (orange) và dùng khóa công khai mặc định (test-keys).",
-        defense: "Lý do chặn: Khi Bootloader đã mở khóa, phân vùng /system và /boot không còn được bảo vệ toàn vẹn bằng chữ ký phần cứng, cho phép cài đặt mã độc tầng thấp nên ứng dụng định danh lập tức từ chối chạy.",
+        defense: "Lý do chặn: Khi Bootloader đã mở khóa, phân vùng /system và /boot không còn được bảo vệ toàn vẹn bằng chữ ký phần cứng, cho phép chỉnh sửa nhân hệ điều hành nên ứng dụng định danh lập tức từ chối chạy.",
         code: `// Kotlin: Kiểm tra chữ ký bản dựng ROM & trạng thái Verified Boot\nfun isCustomOrTestRom(): Boolean {\n    val buildTags = android.os.Build.TAGS ?: ""\n    val isTestKeys = buildTags.contains("test-keys") || buildTags.contains("dev-keys")\n    val bootState = getSystemProperty("ro.boot.verifiedbootstate") // "green" = Locked\n    val isUnlocked = bootState != "green" && bootState.isNotEmpty()\n    return isTestKeys || isUnlocked\n}`,
         evalEnv(env) {
           if (env === 'stock') {
@@ -179,7 +179,7 @@
                 { k: "ro.build.tags", v: "release-keys", ok: true },
                 { k: "ro.debuggable", v: "0", ok: true }
               ],
-              caption: "02 / [HỢP LỆ] Bootloader đang khóa (green) và bản dựng mang chữ ký hãng (release-keys) -> Cho phép vào màn hình đăng nhập."
+              caption: "02 / [HỢP LỆ] Bootloader đang khóa (green) và bản dựng mang chữ ký hãng (release-keys) -> Cho phép sang lớp kiểm tra tiếp theo."
             };
           }
           return {
@@ -189,7 +189,7 @@
               { k: "ro.build.tags", v: env === 'custom_rom' ? "test-keys" : "release-keys", ok: env !== 'custom_rom' },
               { k: "ro.secure", v: "0 (Modified)", ok: false }
             ],
-            caption: "02 / [BỊ CHẶN] Phát hiện Bootloader đã mở khóa (orange) hoặc bản dựng Custom ROM (test-keys) -> Hiển thị cảnh báo thiết bị không an toàn."
+            caption: "02 / [BỊ CHẶN] Phát hiện Bootloader đã mở khóa (orange) hoặc bản dựng Custom ROM (test-keys) -> Chặn truy cập ngay từ Lớp 01."
           };
         }
       },
@@ -200,10 +200,10 @@
         probeNode: "VFS & Mounts",
         probeSub: "/proc/self/mounts",
         principle: "Thay vì chỉ kiểm tra file /system/bin/su bằng Java (vốn dễ bị ẩn bởi các module), ứng dụng dùng thư viện Native C/C++ gọi trực tiếp syscall xuống nhân Linux để kiểm tra thư mục /data/adb, các phân vùng OverlayFS và điểm gắn kết bất thường của Magisk hoặc KernelSU trong tệp /proc/self/mounts.",
-        defense: "Lý do chặn: Gọi Native Syscall trực tiếp giúp ứng dụng bỏ qua các lớp đánh lừa ở tầng Java Framework, phát hiện chính xác các phân vùng hệ thống đã bị chỉnh sửa.",
+        defense: "Lý do chặn: Gọi Native Syscall trực tiếp giúp ứng dụng bỏ qua các lớp đánh lừa ở tầng Java Framework, phát hiện chính xác các phân vùng hệ thống đã bị chiếm quyền Root.",
         code: `// Native C / JNI: Kiểm tra trực tiếp điểm gắn kết & đường dẫn đặc quyền\n#include <unistd.h>\nbool checkRootPaths() {\n    const char* paths[] = {\n        "/system/bin/su", "/system/xbin/su", "/sbin/su", "/data/adb/magisk", "/data/adb/ksu"\n    };\n    for (int i = 0; i < 5; i++) {\n        if (access(paths[i], F_OK) == 0) return true; // Phát hiện tồn tại\n    }\n    return false;\n}`,
         evalEnv(env) {
-          if (env === 'stock' || env === 'custom_rom') {
+          if (env === 'stock') {
             return {
               blocked: false,
               props: [
@@ -212,6 +212,17 @@
                 { k: "proc/mounts", v: "Standard VFS", ok: true }
               ],
               caption: "02 / [HỢP LỆ] Không phát hiện tệp nhị phân su hay phân vùng gắn kết đặc quyền (Magisk/KernelSU) -> Vượt qua lớp kiểm tra Root."
+            };
+          }
+          if (env === 'custom_rom') {
+            return {
+              blocked: true,
+              props: [
+                { k: "su binary", v: "Not Found", ok: true },
+                { k: "Layer 01 (AVB)", v: "FAILED (Unlocked)", ok: false },
+                { k: "Final Decision", v: "Access Denied", ok: false }
+              ],
+              caption: "02 / [BỊ CHẶN] Máy chưa cài su/Magisk nhưng đã trượt Lớp 01 (Bootloader mở khóa / Custom ROM) -> Chuỗi bảo vệ từ chối truy cập."
             };
           }
           return {
@@ -253,7 +264,7 @@
               { k: "STRONG_INTEGRITY", v: "FAILED (Unlocked)", ok: false },
               { k: "Keystore Chain", v: "Broken / Unverified", ok: false }
             ],
-            caption: "02 / [BỊ CHẶN] Chuỗi chứng chỉ phần cứng TEE báo trạng thái Bootloader đã mở khóa -> Server từ chối cấp token truy cập."
+            caption: "02 / [BỊ CHẶN] Chuỗi chứng chỉ phần cứng TEE báo trạng thái thiết bị đã can thiệp hệ thống -> Server từ chối cấp token truy cập."
           };
         }
       },
@@ -263,29 +274,40 @@
         subtitle: "Phát hiện công cụ tiêm mã động Frida, Xposed / LSPosed trong bộ nhớ",
         probeNode: "Memory Maps",
         probeSub: "/proc/self/maps",
-        principle: "Khi ứng dụng đang chạy, lớp bảo vệ RASP (Runtime Application Self-Protection) liên tục quét danh sách các thư viện đang nạp trong không gian bộ nhớ tiến trình (/proc/self/maps) và kiểm tra TracerPid để phát hiện thư viện lạ (như frida-agent, lsposed) đang can thiệp vào luồng thực thi.",
-        defense: "Lý do chặn: Ngăn chặn việc đọc trộm dữ liệu nhạy cảm trên RAM hoặc sửa đổi kết quả trả về của các hàm kiểm tra bảo mật ngay lúc ứng dụng đang hoạt động.",
+        principle: "Khi ứng dụng đang chạy, lớp bảo vệ RASP (Runtime Application Self-Protection) liên tục quét danh sách các thư viện đang nạp trong không gian bộ nhớ tiến trình (/proc/self/maps) và kiểm tra TracerPid để phát hiện thư viện lạ (như frida-agent, lsposed) đang can thiệp vào luồng thực thi. Đồng thời tổng hợp kết quả từ 3 lớp trước đó.",
+        defense: "Lý do chặn: Ngăn chặn việc đọc trộm dữ liệu nhạy cảm trên RAM hoặc móc nối (hook) sửa đổi kết quả trả về của các hàm kiểm tra bảo mật.",
         code: `// Native C: Quét /proc/self/maps phát hiện thư viện tiêm vào RAM\nFILE *fp = fopen("/proc/self/maps", "r");\nchar line[512];\nwhile (fgets(line, sizeof(line), fp)) {\n    if (strstr(line, "frida") || strstr(line, "xposed") || strstr(line, "lsposed")) {\n        fclose(fp);\n        _exit(1); // Phát hiện can thiệp bộ nhớ -> Thoát an toàn\n    }\n}`,
         evalEnv(env) {
-          if (env !== 'hooked') {
+          if (env === 'stock') {
             return {
               blocked: false,
               props: [
                 { k: "/proc/self/maps", v: "Clean Libraries", ok: true },
                 { k: "TracerPid", v: "0 (No Debugger)", ok: true },
-                { k: "Port 27042", v: "Closed", ok: true }
+                { k: "Layers 01-03", v: "ALL PASSED", ok: true }
               ],
-              caption: "02 / [HỢP LỆ] Không gian bộ nhớ RAM sạch, không phát hiện công cụ debug hay framework tiêm mã -> Ứng dụng vận hành ổn định."
+              caption: "02 / [HỢP LỆ] Không gian bộ nhớ RAM sạch và thiết bị vượt qua toàn bộ 4 lớp bảo mật -> Ứng dụng vận hành ổn định."
+            };
+          }
+          if (env === 'hooked') {
+            return {
+              blocked: true,
+              props: [
+                { k: "/proc/self/maps", v: "frida / lsposed found", ok: false },
+                { k: "TracerPid", v: "Attached (!= 0)", ok: false },
+                { k: "RASP Action", v: "Terminate Process", ok: false }
+              ],
+              caption: "02 / [BỊ CHẶN] Module RASP phát hiện thư viện tiêm mã (Frida/LSPosed) trong không gian bộ nhớ -> Tự động đóng ứng dụng."
             };
           }
           return {
             blocked: true,
             props: [
-              { k: "/proc/self/maps", v: "frida / lsposed found", ok: false },
-              { k: "TracerPid", v: "Attached (!= 0)", ok: false },
-              { k: "RASP Action", v: "Terminate Process", ok: false }
+              { k: "/proc/self/maps", v: "No Hook Detected", ok: true },
+              { k: "Layers 01-03", v: "FAILED (Root/ROM)", ok: false },
+              { k: "Final Decision", v: "Access Denied", ok: false }
             ],
-            caption: "02 / [BỊ CHẶN] Module RASP phát hiện thư viện tiêm mã (Frida/LSPosed) trong không gian bộ nhớ -> Tự động đóng ứng dụng."
+            caption: "02 / [BỊ CHẶN] RAM không có Frida/LSPosed, nhưng thiết bị đã trượt chuỗi kiểm tra Root/Bootloader ở Lớp 01–03 -> Chặn truy cập."
           };
         }
       }
